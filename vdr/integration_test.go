@@ -20,9 +20,8 @@ package vdr
 
 import (
 	"fmt"
-	"io/ioutil"
+	"github.com/nuts-foundation/nuts-node/storage"
 	"net/url"
-	"os"
 	"sync"
 	"testing"
 
@@ -44,23 +43,27 @@ import (
 // Test the full stack by testing creating and updating DID documents.
 func TestVDRIntegration_Test(t *testing.T) {
 	// === Setup ===
-	tmpDir, err := ioutil.TempDir("", "nuts-vdr-integration-test")
-	if !assert.NoError(t, err, "unable to create temporary data dir for integration test") {
-		return
-	}
-	defer os.RemoveAll(tmpDir)
+	tmpDir := io.TestDirectory(t)
 	nutsConfig := core.ServerConfig{
 		Verbosity: "debug",
 		Datadir:   tmpDir,
 	}
 	// Configure the logger:
 	var lvl log.Level
+	var err error
 	// initialize logger, verbosity flag needs to be available
 	if lvl, err = log.ParseLevel(nutsConfig.Verbosity); err != nil {
 		return
 	}
 	log.SetLevel(lvl)
 	log.SetFormatter(&log.TextFormatter{ForceColors: true})
+
+	// Storage
+	warehouse := storage.New()
+	err = warehouse.Configure(nutsConfig)
+	if !assert.NoError(t, err) {
+		return
+	}
 
 	// Startup crypto
 	cryptoInstance := crypto.NewCryptoInstance()
@@ -92,6 +95,7 @@ func TestVDRIntegration_Test(t *testing.T) {
 		docResolver,
 		docFinder,
 		eventPublisher,
+		warehouse,
 	)
 	nutsNetwork.Configure(nutsConfig)
 	nutsNetwork.Start()
@@ -256,6 +260,13 @@ func TestVDRIntegration_ConcurrencyTest(t *testing.T) {
 	cryptoInstance := crypto.NewCryptoInstance()
 	cryptoInstance.Configure(nutsConfig)
 
+	// Storage
+	warehouse := storage.New()
+	err = warehouse.Configure(nutsConfig)
+	if !assert.NoError(t, err) {
+		return
+	}
+
 	// DID Store
 	didStore := store.NewMemoryStore()
 	docResolver := doc.Resolver{Store: didStore}
@@ -282,6 +293,7 @@ func TestVDRIntegration_ConcurrencyTest(t *testing.T) {
 		docResolver,
 		docFinder,
 		eventPublisher,
+		warehouse,
 	)
 	nutsNetwork.Configure(nutsConfig)
 	nutsNetwork.Start()
