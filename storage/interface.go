@@ -43,6 +43,9 @@ type KVStore interface {
 type WriteTransaction interface {
 	// Bucket returns the specified bucket for writing. If it doesn't exist, it will be created.
 	Bucket(bucketName string) (BucketWriter, error)
+
+	// BucketExists returns whether the specified bucket exists.
+	BucketExists(bucketName string) (bool, error)
 }
 
 // ReadTransaction is used to read from a KVStore.
@@ -83,4 +86,6 @@ type Cursor interface {
 	Seek(seek []byte) (key []byte, value []byte)
 	// Next moves the cursor to the next key.
 	Next() (key []byte, value []byte)
+	// Last moves the cursor to the last key.
+	Last() (key []byte, value []byte)
 }

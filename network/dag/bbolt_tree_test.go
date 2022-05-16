@@ -193,7 +193,7 @@ func TestBboltTree_buildFromDag(t *testing.T) {
 	tx2, _, _ := CreateTestTransaction(7, tx1a, tx1b)
 	dag := CreateDAG(t)
 	dagState := &state{
-		db:    dag.db,
+		db:    dag.store,
 		graph: dag,
 	}
 	err := dag.Add(context.Background(), tx0, tx1a, tx1b, tx2)
@@ -202,7 +202,7 @@ func TestBboltTree_buildFromDag(t *testing.T) {
 	}
 
 	t.Run("ok - build tree", func(t *testing.T) {
-		store := newBBoltTreeStore(dag.db, "real bucket", tree.New(tree.NewXor(), testLeafSize))
+		store := newBBoltTreeStore(dag.store, "real bucket", tree.New(tree.NewXor(), testLeafSize))
 
 		err := store.migrate(context.Background(), dagState)
 
@@ -213,7 +213,7 @@ func TestBboltTree_buildFromDag(t *testing.T) {
 	})
 
 	t.Run("fail - tree is not empty", func(t *testing.T) {
-		store := newBBoltTreeStore(dag.db, "fail bucket", tree.New(tree.NewXor(), testLeafSize))
+		store := newBBoltTreeStore(dag.store, "fail bucket", tree.New(tree.NewXor(), testLeafSize))
 		store.tree.Insert(tx0.Ref(), 0)
 		exp := dag.Heads(context.Background())[0]
 

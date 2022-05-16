@@ -22,7 +22,7 @@ import (
 	"context"
 
 	"github.com/nuts-foundation/nuts-node/crypto/hash"
-	"github.com/nuts-foundation/nuts-node/network/storage"
+	"github.com/nuts-foundation/nuts-node/network/storageex"
 	"go.etcd.io/bbolt"
 )
 
@@ -41,7 +41,7 @@ type bboltPayloadStore struct {
 func (store bboltPayloadStore) IsPayloadPresent(ctx context.Context, payloadHash hash.SHA256Hash) (bool, error) {
 	var result bool
 	var err error
-	err = storage.BBoltTXView(ctx, store.db, func(contextWithTX context.Context, tx *bbolt.Tx) error {
+	err = storageex.BBoltTXView(ctx, store.db, func(contextWithTX context.Context, tx *bbolt.Tx) error {
 		bucket := tx.Bucket([]byte(payloadsBucketName))
 		if bucket == nil {
 			return nil
@@ -56,7 +56,7 @@ func (store bboltPayloadStore) IsPayloadPresent(ctx context.Context, payloadHash
 func (store bboltPayloadStore) ReadPayload(ctx context.Context, payloadHash hash.SHA256Hash) ([]byte, error) {
 	var result []byte
 	var err error
-	err = storage.BBoltTXView(ctx, store.db, func(contextWithTX context.Context, tx *bbolt.Tx) error {
+	err = storageex.BBoltTXView(ctx, store.db, func(contextWithTX context.Context, tx *bbolt.Tx) error {
 		bucket := tx.Bucket([]byte(payloadsBucketName))
 		if bucket == nil {
 			return nil
@@ -68,7 +68,7 @@ func (store bboltPayloadStore) ReadPayload(ctx context.Context, payloadHash hash
 }
 
 func (store bboltPayloadStore) WritePayload(ctx context.Context, payloadHash hash.SHA256Hash, data []byte) error {
-	return storage.BBoltTXUpdate(ctx, store.db, func(_ context.Context, tx *bbolt.Tx) error {
+	return storageex.BBoltTXUpdate(ctx, store.db, func(_ context.Context, tx *bbolt.Tx) error {
 		payloads, err := tx.CreateBucketIfNotExists([]byte(payloadsBucketName))
 		if err != nil {
 			return err

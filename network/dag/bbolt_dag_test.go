@@ -375,7 +375,7 @@ func TestBBoltDAG_Migrate(t *testing.T) {
 
 	t.Run("ok - root is translated", func(t *testing.T) {
 		graph := CreateDAG(t)
-		graph.db.Update(func(tx *bbolt.Tx) error {
+		graph.store.Update(func(tx *bbolt.Tx) error {
 			putRoot(tx, A, []hash.SHA256Hash{})
 			return nil
 		})
@@ -385,7 +385,7 @@ func TestBBoltDAG_Migrate(t *testing.T) {
 			return
 		}
 
-		graph.db.View(func(tx *bbolt.Tx) error {
+		graph.store.View(func(tx *bbolt.Tx) error {
 			clockBucket := tx.Bucket([]byte(clockBucket))
 			root := clockBucket.Get(clockToBytes(0))
 			assert.Len(t, root, 32)
@@ -396,7 +396,7 @@ func TestBBoltDAG_Migrate(t *testing.T) {
 
 	t.Run("ok - simple graph is translated", func(t *testing.T) {
 		graph := CreateDAG(t)
-		graph.db.Update(func(tx *bbolt.Tx) error {
+		graph.store.Update(func(tx *bbolt.Tx) error {
 			putRoot(tx, A, []hash.SHA256Hash{B.Ref()})
 			putTransaction(tx, B, []hash.SHA256Hash{})
 			return nil
@@ -407,7 +407,7 @@ func TestBBoltDAG_Migrate(t *testing.T) {
 			return
 		}
 
-		graph.db.View(func(tx *bbolt.Tx) error {
+		graph.store.View(func(tx *bbolt.Tx) error {
 			clockBucket := tx.Bucket([]byte(clockBucket))
 			atOne := clockBucket.Get(clockToBytes(1))
 			assert.Len(t, atOne, 32)
@@ -417,7 +417,7 @@ func TestBBoltDAG_Migrate(t *testing.T) {
 
 	t.Run("ok - branch is translated", func(t *testing.T) {
 		graph := CreateDAG(t)
-		graph.db.Update(func(tx *bbolt.Tx) error {
+		graph.store.Update(func(tx *bbolt.Tx) error {
 			putRoot(tx, A, []hash.SHA256Hash{B.Ref(), C.Ref()})
 			putTransaction(tx, B, []hash.SHA256Hash{})
 			putTransaction(tx, C, []hash.SHA256Hash{})
@@ -429,7 +429,7 @@ func TestBBoltDAG_Migrate(t *testing.T) {
 			return
 		}
 
-		graph.db.View(func(tx *bbolt.Tx) error {
+		graph.store.View(func(tx *bbolt.Tx) error {
 			clockBucket := tx.Bucket([]byte(clockBucket))
 			atOne := clockBucket.Get(clockToBytes(1))
 			assert.Len(t, atOne, 64)
@@ -439,7 +439,7 @@ func TestBBoltDAG_Migrate(t *testing.T) {
 
 	t.Run("ok - more complicated", func(t *testing.T) {
 		graph := CreateDAG(t)
-		graph.db.Update(func(tx *bbolt.Tx) error {
+		graph.store.Update(func(tx *bbolt.Tx) error {
 			// create correct buckets and add root
 			putRoot(tx, A, []hash.SHA256Hash{B.Ref(), C.Ref(), D.Ref()})
 			putTransaction(tx, B, []hash.SHA256Hash{D.Ref()})
@@ -453,7 +453,7 @@ func TestBBoltDAG_Migrate(t *testing.T) {
 			return
 		}
 
-		graph.db.View(func(tx *bbolt.Tx) error {
+		graph.store.View(func(tx *bbolt.Tx) error {
 			clockBucket := tx.Bucket([]byte(clockBucket))
 			atOne := clockBucket.Get(clockToBytes(2))
 			assert.Len(t, atOne, 32)

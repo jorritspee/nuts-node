@@ -30,7 +30,7 @@ import (
 
 	"github.com/nuts-foundation/nuts-node/crypto/hash"
 	"github.com/nuts-foundation/nuts-node/network/dag/tree"
-	"github.com/nuts-foundation/nuts-node/network/storage"
+	"github.com/nuts-foundation/nuts-node/network/storageex"
 	"github.com/nuts-foundation/nuts-node/test/io"
 	"github.com/stretchr/testify/assert"
 )
@@ -135,7 +135,7 @@ func TestState_Observe(t *testing.T) {
 				txState := createState(t)
 				var actual bool
 				txState.RegisterObserver(func(ctx context.Context, transaction Transaction, _ []byte) error {
-					_, actual = storage.BBoltTX(ctx)
+					_, actual = storageex.BBoltTX(ctx)
 					return nil
 				}, expected)
 				tx := CreateTestTransactionWithJWK(1)

@@ -29,7 +29,7 @@ import (
 	"github.com/nuts-foundation/nuts-node/crypto/hash"
 	"github.com/nuts-foundation/nuts-node/network/dag/tree"
 	"github.com/nuts-foundation/nuts-node/network/log"
-	"github.com/nuts-foundation/nuts-node/network/storage"
+	"github.com/nuts-foundation/nuts-node/network/storageex"
 )
 
 const (
@@ -84,7 +84,7 @@ func (store *bboltTree) isEmpty() bool {
 // The tree is not aware of previously seen transactions, so it should be transactional with updates to the dag.
 func (store *bboltTree) dagObserver(ctx context.Context, transaction Transaction, _ []byte) error {
 	if transaction != nil { // can happen when payload is written for private TX
-		err := storage.BBoltTXUpdate(ctx, store.db, func(callbackCtx context.Context, tx *bbolt.Tx) error {
+		err := storageex.BBoltTXUpdate(ctx, store.db, func(callbackCtx context.Context, tx *bbolt.Tx) error {
 			dirty := store.tree.InsertGetDirty(transaction.Ref(), transaction.Clock())
 
 			// Rollback after timeout to bring tree and DAG back in sync.
@@ -144,7 +144,7 @@ func (store *bboltTree) migrate(ctx context.Context, state State) error {
 // read fills the tree with data in the bucket.
 // Returns an error the bucket does not exist, or if data in the bucket doesn't match the tree's Data prototype.
 func (store *bboltTree) read(ctx context.Context) error {
-	return storage.BBoltTXUpdate(ctx, store.db, func(_ context.Context, tx *bbolt.Tx) error {
+	return storageex.BBoltTXUpdate(ctx, store.db, func(_ context.Context, tx *bbolt.Tx) error {
 		// get bucket
 		bucket := tx.Bucket([]byte(store.bucketName))
 		if bucket == nil {
@@ -170,7 +170,7 @@ func (store *bboltTree) read(ctx context.Context) error {
 // The incremental update is defined as changes to the tree since the last call to Tree.ResetUpdate,
 // which is called when writeUpdates completes successfully.
 func (store *bboltTree) writeUpdates(ctx context.Context, dirties map[uint32][]byte, orphaned []uint32) error {
-	return storage.BBoltTXUpdate(ctx, store.db, func(_ context.Context, tx *bbolt.Tx) error {
+	return storageex.BBoltTXUpdate(ctx, store.db, func(_ context.Context, tx *bbolt.Tx) error {
 		bucket, err := tx.CreateBucketIfNotExists([]byte(store.bucketName))
 		if err != nil {
 			return err

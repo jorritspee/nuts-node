@@ -32,7 +32,7 @@ import (
 	"github.com/nuts-foundation/nuts-node/crypto/hash"
 	"github.com/nuts-foundation/nuts-node/network/dag/tree"
 	"github.com/nuts-foundation/nuts-node/network/log"
-	"github.com/nuts-foundation/nuts-node/network/storage"
+	"github.com/nuts-foundation/nuts-node/network/storageex"
 	"github.com/nuts-foundation/nuts-node/vdr/types"
 	"go.etcd.io/bbolt"
 )
@@ -121,7 +121,7 @@ func (s *state) treeObserver(ctx context.Context, transaction Transaction, paylo
 }
 
 func (s *state) Add(ctx context.Context, transaction Transaction, payload []byte) error {
-	return storage.BBoltTXUpdate(ctx, s.db, func(contextWithTX context.Context, tx *bbolt.Tx) error {
+	return storageex.BBoltTXUpdate(ctx, s.db, func(contextWithTX context.Context, tx *bbolt.Tx) error {
 		present, err := s.IsPresent(contextWithTX, transaction.Ref())
 		if err != nil {
 			return err
@@ -180,7 +180,7 @@ func (s *state) IsPresent(ctx context.Context, hash hash.SHA256Hash) (bool, erro
 }
 
 func (s *state) WritePayload(ctx context.Context, transaction Transaction, payloadHash hash.SHA256Hash, data []byte) error {
-	return storage.BBoltTXUpdate(ctx, s.db, func(contextWithTX context.Context, tx *bbolt.Tx) error {
+	return storageex.BBoltTXUpdate(ctx, s.db, func(contextWithTX context.Context, tx *bbolt.Tx) error {
 		err := s.payloadStore.WritePayload(contextWithTX, payloadHash, data)
 		if err == nil {
 			// ctx passed with bbolt transaction
@@ -235,9 +235,9 @@ func (s *state) IBLT(ctx context.Context, reqClock uint32) (tree.Iblt, uint32) {
 }
 
 // lamportClock returns the highest clock value in the DAG.
-func (s *state) lamportClock(ctx context.Context) uint32 {
+func (s *state) lamportClock() uint32 {
 	// TODO: keep track of clock in state
-	return s.graph.getHighestClock(ctx)
+	return s.graph.getHighestClock()
 }
 
 func (s *state) Shutdown() error {
@@ -328,7 +328,7 @@ func (s *state) notifyObservers(ctx context.Context, transaction Transaction, pa
 		}
 	}
 	// check if there's an active transaction
-	tx, txIsActive := storage.BBoltTX(ctx)
+	tx, txIsActive := storageex.BBoltTX(ctx)
 	if txIsActive { // sanity check because there should always be a transaction
 		tx.OnCommit(notifyNonTXObservers)
 	} else {

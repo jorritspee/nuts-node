@@ -22,13 +22,14 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"github.com/nuts-foundation/nuts-node/storage"
 	"sort"
 	"time"
 
 	"github.com/nuts-foundation/nuts-node/core"
 	"github.com/nuts-foundation/nuts-node/crypto/hash"
 	"github.com/nuts-foundation/nuts-node/network/log"
-	"github.com/nuts-foundation/nuts-node/network/storage"
+	"github.com/nuts-foundation/nuts-node/network/storageex"
 	"go.etcd.io/bbolt"
 )
 
@@ -57,7 +58,7 @@ const clockIndexBucket = "clockIndex"
 const clockBucket = "clocks"
 
 type bboltDAG struct {
-	db *bbolt.DB
+	store storage.KVStore
 }
 
 type headsStatistic struct {
@@ -110,83 +111,12 @@ func (d dataSizeStatistic) String() string {
 }
 
 // newBBoltDAG creates a etcd/bbolt backed DAG using the given database.
-func newBBoltDAG(db *bbolt.DB) *bboltDAG {
-	return &bboltDAG{db: db}
+func newBBoltDAG(store storage.KVStore) *bboltDAG {
+	return &bboltDAG{store: store}
 }
 
 func (dag *bboltDAG) Migrate() error {
-	// We'll take the root and then use nexts to add the Transactions in the right order
-	err := dag.db.Update(func(tx *bbolt.Tx) error {
-		if tx.Bucket([]byte(nextsBucket)) == nil {
-			// already migrated
-			return nil
-		}
-
-		log.Logger().Info("DAG migrations: adding logical clock values to transactions")
-
-		// get root
-		transactions := tx.Bucket([]byte(transactionsBucket))
-		roots := parseHashList(transactions.Get([]byte(rootsTransactionKey)))
-
-		for nexts, err := migrateAddClocks(tx, []hash.SHA256Hash{roots[0]}); len(nexts) != 0; nexts, err = migrateAddClocks(tx, nexts) {
-			if err != nil {
-				return err
-			}
-		}
-
-		// remove nexts
-		if err := tx.DeleteBucket([]byte(nextsBucket)); err != nil {
-			return err
-		}
-		// remove root
-		return transactions.Delete([]byte(rootsTransactionKey))
-	})
-	if err != nil {
-		return err
-	}
-
-	log.Logger().Info("DAG migrations: done")
 	return nil
-}
-
-func migrateAddClocks(tx *bbolt.Tx, refs []hash.SHA256Hash) ([]hash.SHA256Hash, error) {
-	nextBucket := tx.Bucket([]byte(nextsBucket))
-	txBucket := tx.Bucket([]byte(transactionsBucket))
-	var nexts []hash.SHA256Hash
-	var retry []hash.SHA256Hash
-
-	for _, ref := range refs {
-		transaction, err := ParseTransaction(txBucket.Get(ref.Slice()))
-		if err != nil {
-			return nexts, err
-		}
-		// indexClockValue uses the prevs to guarantee ordering
-		if err := indexClockValue(tx, transaction); err != nil {
-			// we hit a branch and have processed a TX to soon, retry later
-			retry = append(retry, ref)
-		}
-
-		// find next TXs from nexts bucket
-		nexts = append(nexts, parseHashList(nextBucket.Get(ref.Slice()))...)
-	}
-
-	// nexts have a lot of doubles
-	return unique(append(nexts, retry...)), nil
-}
-
-func unique(list []hash.SHA256Hash) []hash.SHA256Hash {
-	set := map[hash.SHA256Hash]bool{}
-
-	for _, v := range list {
-		set[v] = true
-	}
-
-	result := make([]hash.SHA256Hash, 0)
-	for k := range set {
-		result = append(result, k)
-	}
-
-	return result
 }
 
 func (dag *bboltDAG) Diagnostics() []core.DiagnosticResult {
@@ -202,7 +132,7 @@ func (dag *bboltDAG) Diagnostics() []core.DiagnosticResult {
 func (dag bboltDAG) Get(ctx context.Context, ref hash.SHA256Hash) (Transaction, error) {
 	var result Transaction
 	var err error
-	err = storage.BBoltTXView(ctx, dag.db, func(_ context.Context, tx *bbolt.Tx) error {
+	err = dag.store.Read(func(tx storage.ReadTransaction) error {
 		result, err = getTransaction(ref, tx)
 		return err
 	})
@@ -211,7 +141,7 @@ func (dag bboltDAG) Get(ctx context.Context, ref hash.SHA256Hash) (Transaction, 
 
 func (dag bboltDAG) GetByPayloadHash(ctx context.Context, payloadHash hash.SHA256Hash) ([]Transaction, error) {
 	result := make([]Transaction, 0)
-	err := storage.BBoltTXView(ctx, dag.db, func(_ context.Context, tx *bbolt.Tx) error {
+	err := storageex.BBoltTXView(ctx, dag.store, func(_ context.Context, tx *bbolt.Tx) error {
 		transactions := tx.Bucket([]byte(transactionsBucket))
 		payloadIndex := tx.Bucket([]byte(payloadIndexBucket))
 		if transactions == nil || payloadIndex == nil {
@@ -231,7 +161,7 @@ func (dag bboltDAG) GetByPayloadHash(ctx context.Context, payloadHash hash.SHA25
 }
 
 func (dag *bboltDAG) PayloadHashes(ctx context.Context, visitor func(payloadHash hash.SHA256Hash) error) error {
-	return storage.BBoltTXView(ctx, dag.db, func(_ context.Context, tx *bbolt.Tx) error {
+	return storageex.BBoltTXView(ctx, dag.store, func(_ context.Context, tx *bbolt.Tx) error {
 		payloadIndex := tx.Bucket([]byte(payloadIndexBucket))
 		if payloadIndex == nil {
 			return nil
@@ -249,7 +179,7 @@ func (dag *bboltDAG) PayloadHashes(ctx context.Context, visitor func(payloadHash
 
 func (dag bboltDAG) Heads(ctx context.Context) []hash.SHA256Hash {
 	result := make([]hash.SHA256Hash, 0)
-	_ = storage.BBoltTXView(ctx, dag.db, func(_ context.Context, tx *bbolt.Tx) error {
+	_ = storageex.BBoltTXView(ctx, dag.store, func(_ context.Context, tx *bbolt.Tx) error {
 		heads := tx.Bucket([]byte(headsBucket))
 		if heads == nil {
 			return nil
@@ -277,7 +207,7 @@ func (dag *bboltDAG) FindBetween(ctx context.Context, startInclusive time.Time, 
 func (dag *bboltDAG) findBetweenLC(ctx context.Context, startInclusive uint32, endExclusive uint32) ([]Transaction, error) {
 	var result []Transaction
 
-	err := storage.BBoltTXView(ctx, dag.db, func(_ context.Context, tx *bbolt.Tx) error {
+	err := storageex.BBoltTXView(ctx, dag.store, func(_ context.Context, tx *bbolt.Tx) error {
 		clocks := tx.Bucket([]byte(clockBucket))
 		if clocks == nil {
 			return nil
@@ -303,7 +233,7 @@ func (dag *bboltDAG) findBetweenLC(ctx context.Context, startInclusive uint32, e
 
 func (dag bboltDAG) IsPresent(ctx context.Context, ref hash.SHA256Hash) (bool, error) {
 	var result bool
-	err := storage.BBoltTXView(ctx, dag.db, func(_ context.Context, tx *bbolt.Tx) error {
+	err := storageex.BBoltTXView(ctx, dag.store, func(_ context.Context, tx *bbolt.Tx) error {
 		if payloads := tx.Bucket([]byte(transactionsBucket)); payloads != nil {
 			data := payloads.Get(ref.Slice())
 			result = data != nil
@@ -314,7 +244,7 @@ func (dag bboltDAG) IsPresent(ctx context.Context, ref hash.SHA256Hash) (bool, e
 }
 
 func (dag *bboltDAG) Add(ctx context.Context, transactions ...Transaction) error {
-	return storage.BBoltTXUpdate(ctx, dag.db, func(_ context.Context, tx *bbolt.Tx) error {
+	return storageex.BBoltTXUpdate(ctx, dag.store, func(_ context.Context, tx *bbolt.Tx) error {
 		for _, transaction := range transactions {
 			if transaction != nil {
 				if err := dag.add(tx, transaction); err != nil {
@@ -327,7 +257,7 @@ func (dag *bboltDAG) Add(ctx context.Context, transactions ...Transaction) error
 }
 
 func (dag bboltDAG) Walk(ctx context.Context, visitor Visitor, startAt hash.SHA256Hash) error {
-	return storage.BBoltTXView(ctx, dag.db, func(contextWithTX context.Context, tx *bbolt.Tx) error {
+	return storageex.BBoltTXView(ctx, dag.store, func(contextWithTX context.Context, tx *bbolt.Tx) error {
 		transactions := tx.Bucket([]byte(transactionsBucket))
 		clocksBucket := tx.Bucket([]byte(clockBucket))
 		clocksIndexBucket := tx.Bucket([]byte(clockIndexBucket))
@@ -351,7 +281,7 @@ func (dag bboltDAG) Walk(ctx context.Context, visitor Visitor, startAt hash.SHA2
 
 func (dag bboltDAG) Statistics(ctx context.Context) Statistics {
 	transactionNum := 0
-	_ = storage.BBoltTXView(ctx, dag.db, func(_ context.Context, tx *bbolt.Tx) error {
+	_ = storageex.BBoltTXView(ctx, dag.store, func(_ context.Context, tx *bbolt.Tx) error {
 		if bucket := tx.Bucket([]byte(transactionsBucket)); bucket != nil {
 			transactionNum = bucket.Stats().KeyN
 		}
@@ -359,7 +289,7 @@ func (dag bboltDAG) Statistics(ctx context.Context) Statistics {
 	})
 	return Statistics{
 		NumberOfTransactions: transactionNum,
-		DataSize:             dag.db.Stats().TxStats.PageAlloc,
+		DataSize:             dag.store.Stats().TxStats.PageAlloc,
 	}
 }
 
@@ -453,17 +383,23 @@ func indexClockValue(tx *bbolt.Tx, transaction Transaction) error {
 
 // getClock returns errNoClockValue if no clock value can be found for the given hash
 // Deprecated: no longer needed when all transactions have an LC value
-func getClock(tx *bbolt.Tx, transaction Transaction) (uint32, error) {
+func getClock(tx storage.ReadTransaction, transaction Transaction) (uint32, error) {
 	// If added, just return it
 	if transaction.Clock() != 0 {
 		return transaction.Clock(), nil
 	}
 
-	lcIndex := tx.Bucket([]byte(clockIndexBucket))
+	lcIndex, err := tx.Bucket(clockIndexBucket)
+	if err != nil {
+		return 0, err
+	}
 	if lcIndex == nil {
 		return 0, errNoClockValue
 	}
-	lClockBytes := lcIndex.Get(transaction.Ref().Slice())
+	lClockBytes, err := lcIndex.Get(transaction.Ref().Slice())
+	if err != nil {
+		return 0, err
+	}
 	if lClockBytes == nil {
 		return 0, errNoClockValue
 	}
@@ -472,17 +408,15 @@ func getClock(tx *bbolt.Tx, transaction Transaction) (uint32, error) {
 }
 
 // returns the highest clock for which a transaction is present in the DAG
-func (dag bboltDAG) getHighestClock(ctx context.Context) uint32 {
+func (dag bboltDAG) getHighestClock() uint32 {
 	var clock uint32
-	_ = storage.BBoltTXView(ctx, dag.db, func(_ context.Context, tx *bbolt.Tx) error {
-		clocksBucket := tx.Bucket([]byte(clockBucket))
-		if clocksBucket == nil {
-			// DAG is empty
-			return nil
-		}
-
+	_ = dag.store.ReadBucket(clockBucket, func(reader storage.BucketReader) error {
 		// find the highest LC in the bucket
-		clockBytes, _ := clocksBucket.Cursor().Last()
+		cursor, err := reader.Cursor()
+		if err != nil {
+			return err
+		}
+		clockBytes, _ := cursor.Last()
 		clock = bytesToClock(clockBytes)
 		return nil
 	})
@@ -545,15 +479,15 @@ func getRoots(lcBucket *bbolt.Bucket) []hash.SHA256Hash {
 	return parseHashList(lcBucket.Get(clockToBytes(0))) // no need to copy, calls FromSlice() (which copies)
 }
 
-func getTransaction(hash hash.SHA256Hash, tx *bbolt.Tx) (Transaction, error) {
-	transactions := tx.Bucket([]byte(transactionsBucket))
-	if transactions == nil {
-		return nil, nil
+func getTransaction(hash hash.SHA256Hash, tx storage.ReadTransaction) (Transaction, error) {
+	transactions, err := tx.Bucket(transactionsBucket)
+	if err != nil || transactions == nil {
+		return nil, err
 	}
 
-	transactionBytes := copyBBoltValue(transactions, hash.Slice())
-	if transactionBytes == nil {
-		return nil, nil
+	transactionBytes, err := transactions.Get(hash.Slice())
+	if err != nil || transactionBytes == nil {
+		return nil, err
 	}
 	parsedTx, err := ParseTransaction(transactionBytes)
 	if err != nil {

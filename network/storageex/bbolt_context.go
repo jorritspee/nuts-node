@@ -35,7 +35,7 @@
  *
  */
 
-package storage
+package storageex
 
 import (
 	"context"
