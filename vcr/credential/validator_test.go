@@ -20,6 +20,9 @@
 package credential
 
 import (
+	"github.com/nuts-foundation/nuts-node/core"
+	"github.com/nuts-foundation/nuts-node/jsonld"
+	"github.com/sirupsen/logrus"
 	"testing"
 	"time"
 
@@ -380,6 +383,41 @@ func validNutsOrganizationCredential() *vc.VerifiableCredential {
 		Issuer:            stringToURI(issuer.String()),
 		IssuanceDate:      time.Now(),
 		CredentialSubject: []interface{}{credentialSubject},
-		Proof:             []interface{}{vc.Proof{}},
+		Proof: []interface{}{vc.Proof{
+			Type:               "test",
+			ProofPurpose:       "unit-test",
+			VerificationMethod: vdr.TestDIDB.URI(),
+			Created:            time.Now(),
+		}},
 	}
+}
+
+func TestDefaultCredentialValidator(t *testing.T) {
+	t.Run("ok", func(t *testing.T) {
+		jsonldInstance := jsonld.NewJSONLDInstance()
+		_ = jsonldInstance.(core.Configurable).Configure(core.ServerConfig{})
+		inputVC := *validNutsOrganizationCredential()
+
+		err := defaultCredentialValidator{jsonldInstance.DocumentLoader()}.Validate(inputVC)
+
+		assert.NoError(t, err)
+	})
+	t.Run("invalid fields", func(t *testing.T) {
+		logrus.SetLevel(logrus.DebugLevel)
+		var invalidCredentialSubject = make(map[string]interface{})
+		invalidCredentialSubject["id"] = vdr.TestDIDB.String()
+		invalidCredentialSubject["organizationButIncorrectFieldName"] = map[string]interface{}{
+			"name": "Because we care B.V.",
+			"city": "EIbergen",
+		}
+
+		jsonldInstance := jsonld.NewJSONLDInstance()
+		_ = jsonldInstance.(core.Configurable).Configure(core.ServerConfig{})
+		inputVC := *validNutsOrganizationCredential()
+		inputVC.CredentialSubject[0] = invalidCredentialSubject
+
+		err := defaultCredentialValidator{jsonldInstance.DocumentLoader()}.Validate(inputVC)
+
+		assert.EqualError(t, err, "validation failed: not all fields are defined by JSON-LD context")
+	})
 }

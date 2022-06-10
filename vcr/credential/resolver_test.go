@@ -29,7 +29,7 @@ import (
 
 func TestFindValidatorAndBuilder(t *testing.T) {
 	t.Run("an unknown type returns the default validator and no builder", func(t *testing.T) {
-		v, b := FindValidatorAndBuilder(vc.VerifiableCredential{})
+		v, b := FindValidatorAndBuilder(vc.VerifiableCredential{}, nil)
 
 		assert.NotNil(t, t, v)
 		assert.Nil(t, b)
@@ -37,7 +37,7 @@ func TestFindValidatorAndBuilder(t *testing.T) {
 
 	t.Run("validator and builder found for NutsOrganizationCredential", func(t *testing.T) {
 		vc := validNutsOrganizationCredential()
-		v, b := FindValidatorAndBuilder(*vc)
+		v, b := FindValidatorAndBuilder(*vc, nil)
 
 		assert.NotNil(t, v)
 		assert.NotNil(t, b)
@@ -45,7 +45,7 @@ func TestFindValidatorAndBuilder(t *testing.T) {
 
 	t.Run("validator and builder found for NutsAuthorizationCredential", func(t *testing.T) {
 		vc := validImpliedNutsAuthorizationCredential()
-		v, b := FindValidatorAndBuilder(*vc)
+		v, b := FindValidatorAndBuilder(*vc, nil)
 
 		assert.NotNil(t, v)
 		assert.NotNil(t, b)

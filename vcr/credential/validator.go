@@ -20,8 +20,11 @@
 package credential
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/nuts-foundation/nuts-node/vcr/log"
+	"github.com/piprate/json-gold/ld"
 	"strings"
 
 	"github.com/nuts-foundation/go-did/vc"
@@ -56,8 +59,11 @@ func failure(err string, args ...interface{}) error {
 	return &validationError{errStr}
 }
 
-// Validate the default fields. This is credential type independent.
-func Validate(credential vc.VerifiableCredential) error {
+type defaultCredentialValidator struct {
+	documentLoader ld.DocumentLoader
+}
+
+func (d defaultCredentialValidator) Validate(credential vc.VerifiableCredential) error {
 	if !credential.IsType(vc.VerifiableCredentialTypeV1URI()) {
 		return failure("type 'VerifiableCredential' is required")
 	}
@@ -78,25 +84,53 @@ func Validate(credential vc.VerifiableCredential) error {
 		return failure("'proof' is required")
 	}
 
-	return nil
+	return d.validateAllFieldsKnown(credential)
 }
 
-type defaultCredentialValidator struct{}
+// validateAllFieldsKnown verifies that all fields in the VC are specified by the JSON-LD context.
+func (d defaultCredentialValidator) validateAllFieldsKnown(input vc.VerifiableCredential) error {
 
-func (d defaultCredentialValidator) Validate(credential vc.VerifiableCredential) error {
-	if err := Validate(credential); err != nil {
-		return err
+	// First expand, then compact and marshal to JSON, then compare
+	inputAsJSON, _ := input.MarshalJSON()
+	inputAsMap := make(map[string]interface{})
+	_ = json.Unmarshal(inputAsJSON, &inputAsMap)
+
+	processor := ld.NewJsonLdProcessor()
+	options := ld.NewJsonLdOptions("") // TODO: why?
+	options.DocumentLoader = d.documentLoader
+	compactedAsMap, err := processor.Compact(inputAsMap, inputAsMap, options)
+	if err != nil {
+		return fmt.Errorf("unable to compact JSON-LD VC: %w", err)
+	}
+
+	// TODO: For some reason, proof returns out almost empty (everything except `type`) after compacting.
+	// Need to find out why, but maybe not a big issue since its fields are used to check the signature?
+	// So if one of the required fields were missing, signature validation would fail.
+	delete(compactedAsMap, "proof")
+	delete(inputAsMap, "proof")
+	expectedAsJSON, _ := json.Marshal(inputAsMap)
+
+	// Now marshal compacted document to JSON and compare
+	compactedAsJSON, _ := json.Marshal(compactedAsMap)
+	if string(expectedAsJSON) != string(compactedAsJSON) {
+		log.Logger().
+			WithField("input-vc", string(expectedAsJSON)).
+			WithField("compacted-vc", string(compactedAsJSON)).
+			Debug("VC validation failed, not all fields are defined by JSON-LD context")
+		return failure("not all fields are defined by JSON-LD context")
 	}
 	return nil
 }
 
 // nutsOrganizationCredentialValidator checks if there's a 'name' and 'city' in the 'organization' struct
-type nutsOrganizationCredentialValidator struct{}
+type nutsOrganizationCredentialValidator struct {
+	documentLoader ld.DocumentLoader
+}
 
 func (d nutsOrganizationCredentialValidator) Validate(credential vc.VerifiableCredential) error {
 	var target = make([]NutsOrganizationCredentialSubject, 0)
 
-	if err := Validate(credential); err != nil {
+	if err := (defaultCredentialValidator{d.documentLoader}).Validate(credential); err != nil {
 		return err
 	}
 
@@ -141,12 +175,14 @@ func (d nutsOrganizationCredentialValidator) Validate(credential vc.VerifiableCr
 // nutsAuthorizationCredentialValidator checks for mandatory fields: id, legalBase, purposeOfUse.
 // It checks if the value for legalBase.consentType is either 'explicit' or 'implied'.
 // When 'explicit', both the evidence and subject subfields must be filled.
-type nutsAuthorizationCredentialValidator struct{}
+type nutsAuthorizationCredentialValidator struct {
+	documentLoader ld.DocumentLoader
+}
 
 func (d nutsAuthorizationCredentialValidator) Validate(credential vc.VerifiableCredential) error {
 	var target = make([]NutsAuthorizationCredentialSubject, 0)
 
-	if err := Validate(credential); err != nil {
+	if err := (defaultCredentialValidator{d.documentLoader}).Validate(credential); err != nil {
 		return err
 	}
 

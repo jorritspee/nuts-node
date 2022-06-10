@@ -21,25 +21,26 @@ package credential
 
 import (
 	"github.com/nuts-foundation/go-did/vc"
+	"github.com/piprate/json-gold/ld"
 )
 
 // FindValidatorAndBuilder finds the Validator and Builder for the credential Type
 // It only supports VCs with one additional type next to the default VerifiableCredential type.
 // When no additional type is provided, it returns the default validator and a nil builder
-func FindValidatorAndBuilder(credential vc.VerifiableCredential) (Validator, Builder) {
+func FindValidatorAndBuilder(credential vc.VerifiableCredential, documentLoader ld.DocumentLoader) (Validator, Builder) {
 	if vcTypes := ExtractTypes(credential); len(vcTypes) > 0 {
 		for _, t := range vcTypes {
 			switch t {
 			case NutsOrganizationCredentialType:
-				return nutsOrganizationCredentialValidator{}, defaultBuilder{vcType: t}
+				return nutsOrganizationCredentialValidator{documentLoader: documentLoader}, defaultBuilder{vcType: t}
 			case NutsAuthorizationCredentialType:
-				return nutsAuthorizationCredentialValidator{}, defaultBuilder{vcType: t}
+				return nutsAuthorizationCredentialValidator{documentLoader: documentLoader}, defaultBuilder{vcType: t}
 			default:
-				return defaultCredentialValidator{}, defaultBuilder{vcType: t}
+				return defaultCredentialValidator{documentLoader: documentLoader}, defaultBuilder{vcType: t}
 			}
 		}
 	}
-	return defaultCredentialValidator{}, nil
+	return defaultCredentialValidator{documentLoader: documentLoader}, nil
 }
 
 // ExtractTypes extract additional VC types from the VC as strings
