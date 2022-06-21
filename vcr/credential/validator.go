@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	ssi "github.com/nuts-foundation/go-did"
 	"github.com/nuts-foundation/nuts-node/vcr/log"
 	"github.com/piprate/json-gold/ld"
 	"strings"
@@ -113,10 +114,11 @@ func (d defaultCredentialValidator) validateAllFieldsKnown(input vc.VerifiableCr
 	// Now marshal compacted document to JSON and compare
 	compactedAsJSON, _ := json.Marshal(compactedAsMap)
 	if string(expectedAsJSON) != string(compactedAsJSON) {
-		log.Logger().
-			WithField("input-vc", string(expectedAsJSON)).
-			WithField("compacted-vc", string(compactedAsJSON)).
-			Debug("VC validation failed, not all fields are defined by JSON-LD context")
+		log.Logger().Debug("VC validation failed, not all fields are defined by JSON-LD context")
+		log.Logger().Debugf("Given VC: %s", string(expectedAsJSON))
+		log.Logger().Debugf("Compacted VC (all undefined fields removed): %s", string(compactedAsJSON))
+		println(string(expectedAsJSON))
+		println(string(compactedAsJSON))
 		return failure("not all fields are defined by JSON-LD context")
 	}
 	return nil
@@ -129,10 +131,6 @@ type nutsOrganizationCredentialValidator struct {
 
 func (d nutsOrganizationCredentialValidator) Validate(credential vc.VerifiableCredential) error {
 	var target = make([]NutsOrganizationCredentialSubject, 0)
-
-	if err := (defaultCredentialValidator{d.documentLoader}).Validate(credential); err != nil {
-		return err
-	}
 
 	err := validateNutsCredentialID(credential)
 	if err != nil {
@@ -169,7 +167,7 @@ func (d nutsOrganizationCredentialValidator) Validate(credential vc.VerifiableCr
 		return failure("'credentialSubject.city' is empty")
 	}
 
-	return nil
+	return (defaultCredentialValidator{d.documentLoader}).Validate(credential)
 }
 
 // nutsAuthorizationCredentialValidator checks for mandatory fields: id, legalBase, purposeOfUse.
@@ -181,10 +179,6 @@ type nutsAuthorizationCredentialValidator struct {
 
 func (d nutsAuthorizationCredentialValidator) Validate(credential vc.VerifiableCredential) error {
 	var target = make([]NutsAuthorizationCredentialSubject, 0)
-
-	if err := (defaultCredentialValidator{d.documentLoader}).Validate(credential); err != nil {
-		return err
-	}
 
 	err := validateNutsCredentialID(credential)
 	if err != nil {
@@ -224,7 +218,12 @@ func (d nutsAuthorizationCredentialValidator) Validate(credential vc.VerifiableC
 		return failure("'credentialSubject.LegalBase.ConsentType' must be 'implied' or 'explicit'")
 	}
 
-	return validateResources(cs.Resources)
+	err = validateResources(cs.Resources)
+	if err != nil {
+		return err
+	}
+
+	return (defaultCredentialValidator{d.documentLoader}).Validate(credential)
 }
 
 func validOperationTypes() []string {
@@ -259,8 +258,11 @@ func validOperation(operation string) bool {
 }
 
 func validateNutsCredentialID(credential vc.VerifiableCredential) error {
-	idWithoutFragment := *credential.ID
-	idWithoutFragment.Fragment = ""
+	var idWithoutFragment ssi.URI
+	if credential.ID != nil {
+		idWithoutFragment = *credential.ID
+		idWithoutFragment.Fragment = ""
+	}
 	if idWithoutFragment.String() != credential.Issuer.String() {
 		return failure("credential ID must start with issuer")
 	}
