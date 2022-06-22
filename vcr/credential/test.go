@@ -20,6 +20,7 @@
 package credential
 
 import (
+	"encoding/json"
 	"time"
 
 	ssi "github.com/nuts-foundation/go-did"
@@ -28,21 +29,55 @@ import (
 )
 
 func validImpliedNutsAuthorizationCredential() *vc.VerifiableCredential {
-	credentialSubject := NutsAuthorizationCredentialSubject{
-		ID: vdr.TestDIDB.String(),
-		LegalBase: LegalBase{
-			ConsentType: "implied",
-		},
-		PurposeOfUse: "eTransfer",
-		Resources: []Resource{
-			{
-				Path:        "/composition/1",
-				Operations:  []string{"read"},
-				UserContext: true,
-			},
-		},
-	}
-	return validNutsAuthorizationCredential(credentialSubject)
+	data := `{
+  "@context": [
+    "https://nuts.nl/credentials/v1",
+    "https://www.w3.org/2018/credentials/v1",
+    "https://w3c-ccg.github.io/lds-jws2020/contexts/lds-jws2020-v1.json"
+  ],
+  "credentialSubject": {
+    "id": "did:nuts:9MJqsz8U6AGzMHjHzEDVqeK7A66zPQjqvoa543fkwRUk",
+    "legalBase": {
+      "consentType": "implied"
+    },
+    "purposeOfUse": "eOverdracht-sender",
+    "resources": [
+      {
+        "operations": [
+          "read",
+          "update"
+        ],
+        "path": "/task/e906fcba-8f4a-4563-9612-31298397346d",
+        "userContext": false
+      },
+      {
+        "operations": [
+          "read",
+          "document"
+        ],
+        "path": "/composition/e906fcba-8f4a-4563-9612-31298397346d",
+        "userContext": true
+      }
+    ]
+  },
+  "id": "did:nuts:Ehgjuv63Daic6D47j76gHGw7SKyHCyMQyX4KH157fMtP#d9fadb7d-a76a-409a-83f1-d9aafde71cd4",
+  "issuanceDate": "2022-06-22T07:31:36.58330906Z",
+  "issuer": "did:nuts:Ehgjuv63Daic6D47j76gHGw7SKyHCyMQyX4KH157fMtP",
+  "proof": {
+    "created": "2022-06-22T07:31:36.583588156Z",
+    "jws": "eyJhbGciOiJFUzI1NiIsImI2NCI6ZmFsc2UsImNyaXQiOlsiYjY0Il19..JuVelQPtGFU1b7z2WyUQCxCvswhgnckRX8IVjEEEqTs1Bp8YinPGJApKiBjJnZ8h7mqg1QidPe_FIkHeOX5e6g",
+    "proofPurpose": "assertionMethod",
+    "type": "JsonWebSignature2020",
+    "verificationMethod": "did:nuts:Ehgjuv63Daic6D47j76gHGw7SKyHCyMQyX4KH157fMtP#5fEVX5GxUKpbVU9fI6Uft8FWi1eFQVOpyi5bmcRB3jw"
+  },
+  "type": [
+    "NutsAuthorizationCredential",
+    "VerifiableCredential"
+  ]
+}`
+	var vc vc.VerifiableCredential
+	_ = json.Unmarshal([]byte(data), &vc)
+	return &vc
 }
 
 func ValidExplicitNutsAuthorizationCredential() *vc.VerifiableCredential {
